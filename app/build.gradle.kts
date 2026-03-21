@@ -43,6 +43,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -57,10 +58,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // Maps
-    implementation(libs.play.services.maps)
+    // MapLibre
+    implementation(libs.maplibre.android.sdk)
     implementation(libs.play.services.location)
-    implementation(libs.maps.compose)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
