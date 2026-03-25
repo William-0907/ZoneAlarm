@@ -5,24 +5,25 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.zonealarm.AppBackground
+import com.example.zonealarm.AppDarkBlue
+import com.example.zonealarm.AppLightBlue
+import com.example.zonealarm.AppPrimary
 import com.example.zonealarm.data.AlarmEntity
 import com.example.zonealarm.ui.viewmodels.AlarmViewModel
-import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.annotations.PolygonOptions
 import org.maplibre.android.camera.CameraPosition
@@ -43,7 +44,6 @@ fun AlarmEditScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     
     var radiusMeters by remember { mutableFloatStateOf(alarm.radius) }
-    var isFavorite by remember { mutableStateOf(alarm.isFavorite) }
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
 
     val mapView = remember {
@@ -75,26 +75,16 @@ fun AlarmEditScreen(
     }
 
     Scaffold(
+        containerColor = AppBackground,
         topBar = {
             TopAppBar(
-                title = { Text(alarm.name) },
+                title = { Text(alarm.name, color = AppLightBlue, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = AppLightBlue)
                     }
                 },
-                actions = {
-                    IconButton(onClick = { 
-                        isFavorite = !isFavorite
-                        viewModel.updateAlarm(alarm.copy(isFavorite = isFavorite))
-                    }) {
-                        Icon(
-                            imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                            contentDescription = "Favorite",
-                            tint = if (isFavorite) Color(0xFFFFD700) else Color.Gray
-                        )
-                    }
-                }
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppBackground)
             )
         }
     ) { padding ->
@@ -105,10 +95,11 @@ fun AlarmEditScreen(
             
             Card(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-                elevation = CardDefaults.cardElevation(8.dp)
+                elevation = CardDefaults.cardElevation(8.dp),
+                colors = CardDefaults.cardColors(containerColor = AppBackground)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Adjust Radius: ${radiusMeters.toInt()}m", fontWeight = FontWeight.Bold)
+                    Text("Adjust Radius: ${radiusMeters.toInt()}m", color = AppLightBlue, fontWeight = FontWeight.Bold)
                     Slider(
                         value = radiusMeters,
                         onValueChange = { 
@@ -118,20 +109,24 @@ fun AlarmEditScreen(
                             }
                         },
                         valueRange = 250f..5000f,
-                        colors = SliderDefaults.colors(thumbColor = Color.Black, activeTrackColor = Color.Black)
+                        colors = SliderDefaults.colors(
+                            thumbColor = AppPrimary,
+                            activeTrackColor = AppPrimary,
+                            inactiveTrackColor = AppDarkBlue
+                        )
                     )
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Button(
                         onClick = {
-                            viewModel.updateAlarm(alarm.copy(radius = radiusMeters, isFavorite = isFavorite))
+                            viewModel.updateAlarm(alarm.copy(radius = radiusMeters))
                             onBack()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Black)
+                        colors = ButtonDefaults.buttonColors(containerColor = AppPrimary)
                     ) {
-                        Text("SAVE CHANGES")
+                        Text("SAVE CHANGES", color = Color.White)
                     }
                 }
             }
@@ -147,7 +142,7 @@ private fun updateVisuals(map: MapLibreMap, center: LatLng, radius: Float) {
     
     val points = mutableListOf<LatLng>()
     val radiusInDegrees = radius / 111320f 
-    for (i in 0 until 360 step 2) {
+    for (i in 0 until 360 step 5) {
         val rad = Math.toRadians(i.toDouble())
         val lat = center.latitude + (radiusInDegrees * cos(rad))
         val lng = center.longitude + (radiusInDegrees * sin(rad) / cos(Math.toRadians(center.latitude)))
@@ -157,7 +152,7 @@ private fun updateVisuals(map: MapLibreMap, center: LatLng, radius: Float) {
     map.addPolygon(
         PolygonOptions()
             .addAll(points)
-            .fillColor(AndroidColor.argb(80, 76, 175, 80))
-            .strokeColor(AndroidColor.argb(150, 0, 200, 0))
+            .fillColor(AndroidColor.argb(80, 87, 96, 222))
+            .strokeColor(AndroidColor.argb(150, 87, 96, 222))
     )
 }

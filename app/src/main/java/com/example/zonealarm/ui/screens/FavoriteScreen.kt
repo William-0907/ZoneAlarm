@@ -28,7 +28,7 @@ import java.util.Locale
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FavoritesScreen(viewModel: AlarmViewModel) {
-    val favorites by viewModel.favoriteAlarms.collectAsState()
+    val favorites by viewModel.alarms.collectAsState()
     var selectedAlarmIds by remember { mutableStateOf(setOf<Int>()) }
     val isSelectionMode = selectedAlarmIds.isNotEmpty()
     var showDeleteConfirmation by remember { mutableStateOf(false) }

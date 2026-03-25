@@ -5,52 +5,16 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -65,14 +29,12 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.zonealarm.AppBackground
-import com.example.zonealarm.AppDarkBlue
-import com.example.zonealarm.AppLightBlue
-import com.example.zonealarm.AppPrimary
+import com.example.zonealarm.*
 import com.example.zonealarm.ui.viewmodels.AlarmViewModel
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.annotations.PolygonOptions
 import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.location.LocationComponentActivationOptions
 import org.maplibre.android.location.LocationComponentOptions
@@ -94,46 +56,44 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
-    var selectedPoint by remember { mutableStateOf<LatLng?>(null) }
-    var isPinDropped by remember { mutableStateOf(false) }
-    var radiusMeters by remember { mutableFloatStateOf(500f) }
     var searchQuery by remember { mutableStateOf("") }
-    var isSatellite by remember { mutableStateOf(false) }
-    var isFavorite by remember { mutableStateOf(false) }
-    
     var showNameDialog by remember { mutableStateOf(false) }
     var alarmName by remember { mutableStateOf("") }
 
     var permissionsGranted by remember {
         mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         )
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        permissionsGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        permissionsGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
         
-        if (permissionsGranted) {
-            mapLibreMap?.let { map ->
-                map.getStyle { style ->
-                    enableLocationComponent(map, style, context)
-                }
+        // Request background location separately for Android 11+
+        if (permissionsGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val hasBg = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (!hasBg) {
+                Toast.makeText(context, "Please allow 'All the time' location access in settings for background alarms to work.", Toast.LENGTH_LONG).show()
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        if (!permissionsGranted) {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
+        val reqs = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Check if we already have fine location but not background
+            if (permissionsGranted) {
+                val hasBg = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+                if (!hasBg) {
+                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
+                }
+            } else {
+                permissionLauncher.launch(reqs.toTypedArray())
+            }
+        } else {
+            permissionLauncher.launch(reqs.toTypedArray())
         }
     }
 
@@ -141,21 +101,31 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
         MapView(context).apply {
             getMapAsync { map ->
                 mapLibreMap = map
-                val styleUrl = if (isSatellite) SATELLITE_STYLE else STREET_STYLE
+                val styleUrl = if (alarmViewModel.isSatellite) SATELLITE_STYLE else STREET_STYLE
                 map.setStyle(styleUrl) { style ->
-                    map.cameraPosition = CameraPosition.Builder()
+                    val initialPos = alarmViewModel.cameraPosition ?: CameraPosition.Builder()
                         .target(LatLng(13.7565, 121.0583))
                         .zoom(11.0)
                         .build()
+                    map.cameraPosition = initialPos
                     
                     if (permissionsGranted) {
                         enableLocationComponent(map, style, context)
                     }
+
+                    if (alarmViewModel.selectedPoint != null) {
+                        if (alarmViewModel.isPinDropped) {
+                            updateMapVisuals(map, alarmViewModel.selectedPoint!!, alarmViewModel.radiusMeters)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            map.addMarker(MarkerOptions().position(alarmViewModel.selectedPoint!!))
+                        }
+                    }
                 }
 
                 map.addOnMapClickListener { point ->
-                    if (!isPinDropped) {
-                        selectedPoint = point
+                    if (!alarmViewModel.isPinDropped) {
+                        alarmViewModel.selectedPoint = point
                         @Suppress("DEPRECATION")
                         map.clear()
                         @Suppress("DEPRECATION")
@@ -163,47 +133,26 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                     }
                     true
                 }
+                
+                map.addOnCameraIdleListener {
+                    alarmViewModel.cameraPosition = map.cameraPosition
+                }
             }
         }
     }
 
-    fun updateMapVisuals(map: MapLibreMap, center: LatLng, radius: Float) {
-        @Suppress("DEPRECATION")
-        map.clear()
-        @Suppress("DEPRECATION")
-        map.addMarker(MarkerOptions().position(center))
-        
-        val points = mutableListOf<LatLng>()
-        val radiusInDegrees = radius / 111320f 
-        
-        for (i in 0 until 360 step 1) {
-            val rad = Math.toRadians(i.toDouble())
-            val lat = center.latitude + (radiusInDegrees * cos(rad))
-            val lng = center.longitude + (radiusInDegrees * sin(rad) / cos(Math.toRadians(center.latitude)))
-            points.add(LatLng(lat, lng))
-        }
-        
-        @Suppress("DEPRECATION")
-        map.addPolygon(
-            PolygonOptions()
-                .addAll(points)
-                .fillColor(AndroidColor.argb(80, 87, 96, 222)) // Using AppPrimary color
-                .strokeColor(AndroidColor.argb(150, 87, 96, 222))
-        )
-    }
-
-    LaunchedEffect(isSatellite) {
+    LaunchedEffect(alarmViewModel.isSatellite) {
         mapLibreMap?.let { map ->
-            val styleUrl = if (isSatellite) SATELLITE_STYLE else STREET_STYLE
+            val styleUrl = if (alarmViewModel.isSatellite) SATELLITE_STYLE else STREET_STYLE
             map.setStyle(styleUrl) { style ->
-                if (permissionsGranted) {
-                    enableLocationComponent(map, style, context)
-                }
-                if (isPinDropped && selectedPoint != null) {
-                    updateMapVisuals(map, selectedPoint!!, radiusMeters)
-                } else if (selectedPoint != null) {
-                    @Suppress("DEPRECATION")
-                    map.addMarker(MarkerOptions().position(selectedPoint!!))
+                if (permissionsGranted) enableLocationComponent(map, style, context)
+                if (alarmViewModel.selectedPoint != null) {
+                    if (alarmViewModel.isPinDropped) {
+                        updateMapVisuals(map, alarmViewModel.selectedPoint!!, alarmViewModel.radiusMeters)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        map.addMarker(MarkerOptions().position(alarmViewModel.selectedPoint!!))
+                    }
                 }
             }
         }
@@ -246,17 +195,17 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
             confirmButton = {
                 Button(
                     onClick = {
-                        if (alarmName.isNotBlank() && selectedPoint != null) {
+                        if (alarmName.isNotBlank() && alarmViewModel.selectedPoint != null) {
                             alarmViewModel.addAlarm(
                                 name = alarmName,
-                                latitude = selectedPoint!!.latitude,
-                                longitude = selectedPoint!!.longitude,
-                                radius = radiusMeters
+                                latitude = alarmViewModel.selectedPoint!!.latitude,
+                                longitude = alarmViewModel.selectedPoint!!.longitude,
+                                radius = alarmViewModel.radiusMeters
                             )
                             Toast.makeText(context, "Alarm has been set", Toast.LENGTH_SHORT).show()
                             showNameDialog = false
-                            isPinDropped = false
-                            selectedPoint = null
+                            alarmViewModel.isPinDropped = false
+                            alarmViewModel.selectedPoint = null
                             @Suppress("DEPRECATION")
                             mapLibreMap?.clear()
                             alarmName = ""
@@ -278,8 +227,7 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { mapView },
-            modifier = Modifier.fillMaxSize(),
-            update = { /* handled by state */ }
+            modifier = Modifier.fillMaxSize()
         )
 
         // Top Search Bar
@@ -325,8 +273,8 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Satellite", fontSize = 12.sp, color = AppLightBlue)
                     Switch(
-                        checked = isSatellite,
-                        onCheckedChange = { isSatellite = it },
+                        checked = alarmViewModel.isSatellite,
+                        onCheckedChange = { alarmViewModel.isSatellite = it },
                         modifier = Modifier.scale(0.7f),
                         colors = SwitchDefaults.colors(
                             checkedTrackColor = AppPrimary,
@@ -340,17 +288,10 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
             
             FloatingActionButton(
                 onClick = {
-                    if (permissionsGranted) {
-                        mapLibreMap?.locationComponent?.let {
+                    mapLibreMap?.locationComponent?.let {
+                        if (it.isLocationComponentActivated) {
                             it.cameraMode = CameraMode.TRACKING
                         }
-                    } else {
-                        permissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
-                        )
                     }
                 },
                 modifier = Modifier.size(40.dp),
@@ -362,7 +303,7 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
         }
 
         // Location overlay
-        if (selectedPoint != null && !isPinDropped) {
+        if (alarmViewModel.selectedPoint != null && !alarmViewModel.isPinDropped) {
             Column(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp).padding(horizontal = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -374,16 +315,16 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("Location Info", fontWeight = FontWeight.Bold, color = AppLightBlue)
-                        val latStr = String.format(Locale.US, "%.5f", selectedPoint!!.latitude)
-                        val lonStr = String.format(Locale.US, "%.5f", selectedPoint!!.longitude)
+                        val latStr = String.format(Locale.US, "%.5f", alarmViewModel.selectedPoint!!.latitude)
+                        val lonStr = String.format(Locale.US, "%.5f", alarmViewModel.selectedPoint!!.longitude)
                         Text("Lat: $latStr, Lon: $lonStr", fontSize = 12.sp, color = AppLightBlue.copy(alpha = 0.8f))
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = {
-                        isPinDropped = true
-                        mapLibreMap?.let { updateMapVisuals(it, selectedPoint!!, radiusMeters) }
+                        alarmViewModel.isPinDropped = true
+                        mapLibreMap?.let { updateMapVisuals(it, alarmViewModel.selectedPoint!!, alarmViewModel.radiusMeters) }
                     },
                     modifier = Modifier.fillMaxWidth(0.7f),
                     colors = ButtonDefaults.buttonColors(containerColor = AppPrimary)
@@ -394,7 +335,7 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
         }
 
         // Detail Slider and Set Alarm
-        if (isPinDropped && selectedPoint != null) {
+        if (alarmViewModel.isPinDropped && alarmViewModel.selectedPoint != null) {
             Card(
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
                 elevation = CardDefaults.cardElevation(12.dp),
@@ -411,33 +352,24 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                             Text("Alarm Area", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = AppLightBlue)
                             Text("Adjust the radius below", color = AppLightBlue.copy(alpha = 0.6f), fontSize = 14.sp)
                         }
-                        Row {
-                            IconButton(onClick = { isFavorite = !isFavorite }) {
-                                Icon(
-                                    imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                                    contentDescription = "Favorite",
-                                    tint = if (isFavorite) Color(0xFFFFD700) else AppLightBlue
-                                )
-                            }
-                            IconButton(onClick = { 
-                                isPinDropped = false
-                                selectedPoint = null
-                                @Suppress("DEPRECATION")
-                                mapLibreMap?.clear()
-                            }) {
-                                Icon(Icons.Default.Close, null, tint = AppLightBlue)
-                            }
+                        IconButton(onClick = { 
+                            alarmViewModel.isPinDropped = false
+                            alarmViewModel.selectedPoint = null
+                            @Suppress("DEPRECATION")
+                            mapLibreMap?.clear()
+                        }) {
+                            Icon(Icons.Default.Close, null, tint = AppLightBlue)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    Text("Radius: ${radiusMeters.toInt()} m", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppLightBlue)
+                    Text("Radius: ${alarmViewModel.radiusMeters.toInt()} m", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppLightBlue)
                     Slider(
-                        value = radiusMeters,
+                        value = alarmViewModel.radiusMeters,
                         onValueChange = { 
-                            radiusMeters = it
-                            mapLibreMap?.let { map -> updateMapVisuals(map, selectedPoint!!, radiusMeters) }
+                            alarmViewModel.radiusMeters = it
+                            mapLibreMap?.let { map -> updateMapVisuals(map, alarmViewModel.selectedPoint!!, alarmViewModel.radiusMeters) }
                         },
                         valueRange = 250f..5000f,
                         colors = SliderDefaults.colors(
@@ -462,24 +394,38 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
     }
 }
 
+private fun updateMapVisuals(map: MapLibreMap, center: LatLng, radius: Float) {
+    @Suppress("DEPRECATION")
+    map.clear()
+    @Suppress("DEPRECATION")
+    map.addMarker(MarkerOptions().position(center))
+    
+    val points = mutableListOf<LatLng>()
+    val radiusInDegrees = radius / 111320f 
+    
+    for (i in 0 until 360 step 5) { // Optimized steps
+        val rad = Math.toRadians(i.toDouble())
+        val lat = center.latitude + (radiusInDegrees * cos(rad))
+        val lng = center.longitude + (radiusInDegrees * sin(rad) / cos(Math.toRadians(center.latitude)))
+        points.add(LatLng(lat, lng))
+    }
+    
+    @Suppress("DEPRECATION")
+    map.addPolygon(
+        PolygonOptions()
+            .addAll(points)
+            .fillColor(AndroidColor.argb(80, 87, 96, 222))
+            .strokeColor(AndroidColor.argb(150, 87, 96, 222))
+    )
+}
+
 @SuppressLint("MissingPermission")
 private fun enableLocationComponent(map: MapLibreMap, loadedMapStyle: org.maplibre.android.maps.Style, context: Context) {
-    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-        return
-    }
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
 
     val locationComponent = map.locationComponent
-    
-    val locationOptions = LocationComponentOptions.builder(context)
-        .foregroundTintColor(AndroidColor.RED)
-        .accuracyAlpha(0.2f)
-        .accuracyColor(AndroidColor.RED)
-        .build()
-
     val activationOptions = LocationComponentActivationOptions.builder(context, loadedMapStyle)
         .useDefaultLocationEngine(true)
-        .locationComponentOptions(locationOptions)
         .build()
     
     locationComponent.activateLocationComponent(activationOptions)

@@ -5,6 +5,10 @@ import android.app.Application
 import android.app.PendingIntent
 import android.content.Intent
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.zonealarm.GeofenceBroadcastReceiver
@@ -16,23 +20,23 @@ import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.geometry.LatLng
 
 class AlarmViewModel(application: Application) : AndroidViewModel(application) {
     private val alarmDao = AlarmDatabase.getDatabase(application).alarmDao()
     private val geofencingClient = LocationServices.getGeofencingClient(application)
 
-    val alarms: StateFlow<List<AlarmEntity>> = alarmDao.getAllAlarms()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    // Map State Persistence
+    var cameraPosition by mutableStateOf<CameraPosition?>(null)
+    var selectedPoint by mutableStateOf<LatLng?>(null)
+    var isPinDropped by mutableStateOf(false)
+    var radiusMeters by mutableFloatStateOf(500f)
+    var isSatellite by mutableStateOf(false)
 
-    val favoriteAlarms: StateFlow<List<AlarmEntity>> = alarms
-        .map { list -> list.filter { it.isFavorite } }
+    val alarms: StateFlow<List<AlarmEntity>> = alarmDao.getAllAlarms()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -46,24 +50,21 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
-    fun addAlarm(name: String, latitude: Double, longitude: Double, radius: Float, isFavorite: Boolean = false) {
+    fun addAlarm(name: String, latitude: Double, longitude: Double, radius: Float) {
         viewModelScope.launch {
             val alarm = AlarmEntity(
                 name = name,
                 latitude = latitude,
                 longitude = longitude,
-                radius = radius,
-                isFavorite = isFavorite
+                radius = radius
             )
             val id = alarmDao.insertAlarm(alarm).toInt()
-            val savedAlarm = alarm.copy(id = id)
-            setupGeofence(savedAlarm)
+            setupGeofence(alarm.copy(id = id))
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun setupGeofence(alarm: AlarmEntity) {
-        // Use ID as request ID to easily identify it in the receiver
         val geofence = Geofence.Builder()
             .setRequestId(alarm.id.toString())
             .setCircularRegion(alarm.latitude, alarm.longitude, alarm.radius)
@@ -79,7 +80,7 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
         val intent = Intent(getApplication(), GeofenceBroadcastReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
             getApplication(), 
-            alarm.id, // Unique requestCode per alarm
+            alarm.id,
             intent, 
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
@@ -109,14 +110,6 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             alarmDao.deleteAlarm(alarm)
             geofencingClient.removeGeofences(listOf(alarm.id.toString()))
-        }
-    }
-
-    fun clearAlarms() {
-        viewModelScope.launch {
-            val currentAlarms = alarms.value
-            alarmDao.clearAlarms()
-            geofencingClient.removeGeofences(currentAlarms.map { it.id.toString() })
         }
     }
 

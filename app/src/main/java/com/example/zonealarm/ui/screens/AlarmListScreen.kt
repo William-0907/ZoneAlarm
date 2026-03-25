@@ -215,13 +215,13 @@ fun AlarmRow(
                 text = alarm.name,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
-                color = AppLightBlue
+                color = if (alarm.isEnabled) AppLightBlue else AppLightBlue.copy(alpha = 0.4f)
             )
             val coords = String.format(Locale.US, "%.4f, %.4f", alarm.latitude, alarm.longitude)
             Text(
                 text = coords,
                 fontSize = 12.sp,
-                color = AppLightBlue.copy(alpha = 0.6f)
+                color = if (alarm.isEnabled) AppLightBlue.copy(alpha = 0.6f) else AppLightBlue.copy(alpha = 0.2f)
             )
         }
 

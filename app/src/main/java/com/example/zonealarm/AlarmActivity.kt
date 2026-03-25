@@ -2,6 +2,7 @@ package com.example.zonealarm
 
 import android.app.KeyguardManager
 import android.content.Context
+import android.content.Intent
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
@@ -62,7 +63,7 @@ class AlarmActivity : ComponentActivity() {
             )
         }
 
-        alarmId = intent.getIntOf("ALARM_ID", -1)
+        alarmId = intent.getIntExtra("ALARM_ID", -1)
         val alarmName = intent.getStringExtra("ALARM_NAME") ?: "Zone Alarm"
         
         // Play ringtone (User selected or default)
@@ -114,10 +115,6 @@ class AlarmActivity : ComponentActivity() {
             }
         }
         finish()
-    }
-
-    private fun Intent.getIntOf(key: String, default: Int): Int {
-        return getIntExtra(key, default)
     }
 
     override fun onDestroy() {

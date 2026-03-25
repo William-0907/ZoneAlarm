@@ -10,6 +10,5 @@ data class AlarmEntity(
     val latitude: Double,
     val longitude: Double,
     val radius: Float,
-    val isEnabled: Boolean = true,
-    val isFavorite: Boolean = false
+    val isEnabled: Boolean = true
 )

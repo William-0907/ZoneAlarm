@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
@@ -32,8 +32,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.zonealarm.data.AlarmEntity
 import com.example.zonealarm.ui.screens.AlarmEditScreen
+import com.example.zonealarm.ui.screens.AlarmHistoryScreen
 import com.example.zonealarm.ui.screens.AlarmListScreen
-import com.example.zonealarm.ui.screens.FavoritesScreen
 import com.example.zonealarm.ui.screens.MapScreen
 import com.example.zonealarm.ui.screens.SettingsScreen
 import com.example.zonealarm.ui.theme.ZoneAlarmTheme
@@ -44,7 +44,7 @@ import org.maplibre.android.MapLibre
 sealed class NavItem(val icon: ImageVector, val label: String) {
     object Alarms : NavItem(Icons.Default.Notifications, "Alarms")
     object Map : NavItem(Icons.Default.Map, "Map")
-    object Favorites : NavItem(Icons.Default.Favorite, "Favorites")
+    object History : NavItem(Icons.Default.History, "History")
     object Settings : NavItem(Icons.Default.Settings, "Settings")
 }
 
@@ -54,9 +54,6 @@ val AppDarkBlue = Color(0xFF2C2D38)
 val AppBackground = Color(0xFF404154)
 val AppSurface = Color(0xFFABAED9)
 val AppLightBlue = Color(0xFFD3D5F0)
-
-val AppDarkGrey = Color(0xFF1C1C1C)
-val AppLightGrey = Color(0xFFF5F5F5)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,11 +71,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ZoneAlarmMainScreen() {
     val viewModel: AlarmViewModel = viewModel()
-    val tabs = listOf(NavItem.Alarms, NavItem.Map, NavItem.Favorites, NavItem.Settings)
+    val tabs = listOf(NavItem.Alarms, NavItem.Map, NavItem.History, NavItem.Settings)
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val coroutineScope = rememberCoroutineScope()
     
-    // Manage "Edit Mode" state
     var editingAlarm by remember { mutableStateOf<AlarmEntity?>(null) }
 
     if (editingAlarm != null) {
@@ -125,7 +121,8 @@ fun ZoneAlarmMainScreen() {
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.padding(innerPadding),
-                userScrollEnabled = pagerState.currentPage != 1
+                userScrollEnabled = pagerState.currentPage != 1,
+                beyondViewportPageCount = tabs.size
             ) { page ->
                 when (page) {
                     0 -> AlarmListScreen(
@@ -134,7 +131,7 @@ fun ZoneAlarmMainScreen() {
                         viewModel = viewModel
                     )
                     1 -> MapScreen(alarmViewModel = viewModel)
-                    2 -> FavoritesScreen(viewModel = viewModel)
+                    2 -> AlarmHistoryScreen(viewModel = viewModel)
                     3 -> SettingsScreen()
                 }
             }
