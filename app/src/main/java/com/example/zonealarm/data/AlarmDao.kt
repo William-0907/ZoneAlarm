@@ -36,6 +36,9 @@ interface AlarmDao {
     @Insert
     suspend fun insertHistory(history: AlarmHistoryEntity)
 
+    @Query("DELETE FROM alarm_history WHERE id = :id")
+    suspend fun deleteHistoryById(id: Int)
+
     @Query("DELETE FROM alarm_history")
     suspend fun clearHistory()
 }

@@ -23,10 +23,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.zonealarm.AppBackground
-import com.example.zonealarm.AppDarkBlue
-import com.example.zonealarm.AppLightBlue
-import com.example.zonealarm.AppPrimary
 import com.example.zonealarm.data.AlarmEntity
 import com.example.zonealarm.ui.viewmodels.AlarmViewModel
 import java.util.Locale
@@ -43,7 +39,7 @@ fun AlarmListScreen(
     val isSelectionMode = selectedAlarmIds.isNotEmpty()
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize().background(AppBackground)) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -57,13 +53,13 @@ fun AlarmListScreen(
                 if (isSelectionMode) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { selectedAlarmIds = emptySet() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel", tint = AppLightBlue)
+                            Icon(Icons.Default.Close, contentDescription = "Cancel", tint = MaterialTheme.colorScheme.onBackground)
                         }
                         Text(
                             text = "${selectedAlarmIds.size} selected",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            color = AppLightBlue
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                     }
                     IconButton(onClick = { showDeleteConfirmation = true }) {
@@ -76,10 +72,10 @@ fun AlarmListScreen(
                 } else {
                     Text(
                         text = buildAnnotatedString {
-                            withStyle(style = SpanStyle(fontWeight = FontWeight.Black, color = AppLightBlue)) {
+                            withStyle(style = SpanStyle(fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)) {
                                 append("ZONE")
                             }
-                            withStyle(style = SpanStyle(fontWeight = FontWeight.Normal, color = AppLightBlue.copy(alpha = 0.6f))) {
+                            withStyle(style = SpanStyle(fontWeight = FontWeight.Normal, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))) {
                                 append("ALARM")
                             }
                         },
@@ -89,14 +85,14 @@ fun AlarmListScreen(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(thickness = 1.dp, color = AppLightBlue.copy(alpha = 0.2f))
+            HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f))
 
             if (alarms.isEmpty()) {
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No alarms. Tap + to add one.", color = AppLightBlue.copy(alpha = 0.5f))
+                    Text("No alarms. Tap + to add one.", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
@@ -128,7 +124,7 @@ fun AlarmListScreen(
                                 }
                             }
                         )
-                        HorizontalDivider(thickness = 0.5.dp, color = AppLightBlue.copy(alpha = 0.1f))
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f))
                     }
                 }
             }
@@ -142,7 +138,7 @@ fun AlarmListScreen(
         ) {
             FloatingActionButton(
                 onClick = onAddClick,
-                containerColor = AppPrimary,
+                containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.White
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Alarm")
@@ -152,9 +148,9 @@ fun AlarmListScreen(
         if (showDeleteConfirmation) {
             AlertDialog(
                 onDismissRequest = { showDeleteConfirmation = false },
-                containerColor = AppDarkBlue,
-                titleContentColor = AppLightBlue,
-                textContentColor = AppLightBlue,
+                containerColor = MaterialTheme.colorScheme.surface,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                textContentColor = MaterialTheme.colorScheme.onSurface,
                 title = { Text("Delete Alarms") },
                 text = { Text("Are you sure you want to delete ${selectedAlarmIds.size} alarms?") },
                 confirmButton = {
@@ -171,7 +167,7 @@ fun AlarmListScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showDeleteConfirmation = false }) {
-                        Text("Cancel", color = AppLightBlue)
+                        Text("Cancel", color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             )
@@ -192,7 +188,7 @@ fun AlarmRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (isSelected) AppPrimary.copy(alpha = 0.2f) else Color.Transparent)
+            .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onToggleSelection
@@ -205,7 +201,7 @@ fun AlarmRow(
             Checkbox(
                 checked = isSelected,
                 onCheckedChange = { onToggleSelection() },
-                colors = CheckboxDefaults.colors(checkedColor = AppPrimary, uncheckedColor = AppLightBlue)
+                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary, uncheckedColor = MaterialTheme.colorScheme.onBackground)
             )
             Spacer(modifier = Modifier.width(8.dp))
         }
@@ -214,14 +210,14 @@ fun AlarmRow(
             Text(
                 text = alarm.name,
                 fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (alarm.isEnabled) AppLightBlue else AppLightBlue.copy(alpha = 0.4f)
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
             )
             val coords = String.format(Locale.US, "%.4f, %.4f", alarm.latitude, alarm.longitude)
             Text(
                 text = coords,
                 fontSize = 12.sp,
-                color = if (alarm.isEnabled) AppLightBlue.copy(alpha = 0.6f) else AppLightBlue.copy(alpha = 0.2f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
             )
         }
 
@@ -231,10 +227,10 @@ fun AlarmRow(
                 onCheckedChange = onToggleEnabled,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = AppPrimary,
-                    uncheckedThumbColor = AppLightBlue,
-                    uncheckedTrackColor = AppDarkBlue,
-                    uncheckedBorderColor = AppLightBlue
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.onBackground,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    uncheckedBorderColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         }

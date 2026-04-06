@@ -9,6 +9,7 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.zonealarm.data.AlarmDatabase
@@ -24,8 +25,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pendingResult = goAsync()
         
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ZoneAlarm:GeofenceWakeLock")
+        wakeLock.acquire(10 * 1000L) 
+
         val geofencingEvent = GeofencingEvent.fromIntent(intent)
         if (geofencingEvent == null) {
+            wakeLock.release()
             pendingResult.finish()
             return
         }
@@ -33,6 +39,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         if (geofencingEvent.hasError()) {
             val errorMessage = GeofenceStatusCodes.getStatusCodeString(geofencingEvent.errorCode)
             Log.e("GeofenceReceiver", "Error: $errorMessage")
+            wakeLock.release()
             pendingResult.finish()
             return
         }
@@ -42,6 +49,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         if (geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER) {
             val triggeringGeofences = geofencingEvent.triggeringGeofences
             if (triggeringGeofences == null) {
+                wakeLock.release()
                 pendingResult.finish()
                 return
             }
@@ -52,10 +60,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 } catch (e: Exception) {
                     Log.e("GeofenceReceiver", "Error processing geofences", e)
                 } finally {
+                    if (wakeLock.isHeld) wakeLock.release()
                     pendingResult.finish()
                 }
             }
         } else {
+            if (wakeLock.isHeld) wakeLock.release()
             pendingResult.finish()
         }
     }
@@ -82,7 +92,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     private fun sendNotification(context: Context, alarmId: Int, alarmName: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "zone_alarm_channel"
+        val channelId = "zone_alarm_channel_v4" // New channel to ensure settings apply
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "Zone Alarms", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -96,15 +106,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
                 description = "Notification for triggered zone alarms"
                 setShowBadge(true)
+                enableLights(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
 
         val alarmIntent = Intent(context, AlarmActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("ALARM_ID", alarmId)
             putExtra("ALARM_NAME", alarmName)
         }
@@ -113,31 +121,32 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             context, 
             alarmId, 
             alarmIntent, 
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
 
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle("Zone Alarm Triggered!")
-            .setContentText("You have entered $alarmName")
+            .setContentText("Entering $alarmName")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(fullScreenIntent, true)
             .setContentIntent(fullScreenIntent)
             .setAutoCancel(true)
-            .setOngoing(true)
+            .setOngoing(false) // Changed to false so user can swipe it away
             .setVibrate(longArrayOf(0, 500, 250, 500))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+            .setFullScreenIntent(fullScreenIntent, true) // Required for high-priority background launch
             .build()
 
         notificationManager.notify(alarmId, notification)
 
-        // Force launch activity if possible (best effort for when device is unlocked)
+        // Force launch activity if app is killed or backgrounded
         try {
             context.startActivity(alarmIntent)
         } catch (e: Exception) {
-            Log.e("GeofenceReceiver", "Direct activity start failed (expected on some Android versions): ${e.message}")
+            Log.e("GeofenceReceiver", "Forced activity start failed: ${e.message}")
         }
     }
 }

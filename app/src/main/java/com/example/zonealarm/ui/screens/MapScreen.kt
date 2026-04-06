@@ -5,12 +5,20 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
-import android.os.Build
+import android.location.Address
+import android.location.Geocoder
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -20,7 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -29,15 +39,16 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.zonealarm.*
 import com.example.zonealarm.ui.viewmodels.AlarmViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.annotations.PolygonOptions
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.location.LocationComponentActivationOptions
-import org.maplibre.android.location.LocationComponentOptions
 import org.maplibre.android.location.modes.CameraMode
 import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapLibreMap
@@ -47,16 +58,19 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 private const val STREET_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
-private const val SATELLITE_STYLE = "https://demotiles.maplibre.org/style.json"
+private const val OUTDOOR_STYLE = "https://tiles.openfreemap.org/styles/liberty"
 
 @SuppressLint("MissingPermission")
 @Composable
 fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    var suggestions by remember { mutableStateOf<List<Address>>(emptyList()) }
+    var showSuggestions by remember { mutableStateOf(false) }
     var showNameDialog by remember { mutableStateOf(false) }
     var alarmName by remember { mutableStateOf("") }
 
@@ -70,42 +84,20 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         permissionsGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        
-        // Request background location separately for Android 11+
-        if (permissionsGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val hasBg = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
-            if (!hasBg) {
-                Toast.makeText(context, "Please allow 'All the time' location access in settings for background alarms to work.", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        val reqs = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Check if we already have fine location but not background
-            if (permissionsGranted) {
-                val hasBg = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
-                if (!hasBg) {
-                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION))
-                }
-            } else {
-                permissionLauncher.launch(reqs.toTypedArray())
-            }
-        } else {
-            permissionLauncher.launch(reqs.toTypedArray())
-        }
     }
 
     val mapView = remember {
         MapView(context).apply {
             getMapAsync { map ->
                 mapLibreMap = map
-                val styleUrl = if (alarmViewModel.isSatellite) SATELLITE_STYLE else STREET_STYLE
+                map.uiSettings.isCompassEnabled = false
+                
+                val styleUrl = if (alarmViewModel.isSatellite) OUTDOOR_STYLE else STREET_STYLE
                 map.setStyle(styleUrl) { style ->
+                    // Improved Zoom: Default to 14.0 instead of 6.5
                     val initialPos = alarmViewModel.cameraPosition ?: CameraPosition.Builder()
-                        .target(LatLng(13.7565, 121.0583))
-                        .zoom(11.0)
+                        .target(LatLng(14.5995, 120.9842)) // Default to Manila instead of Luzon center
+                        .zoom(14.0)
                         .build()
                     map.cameraPosition = initialPos
                     
@@ -130,6 +122,7 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                         map.clear()
                         @Suppress("DEPRECATION")
                         map.addMarker(MarkerOptions().position(point).title("Selected Location"))
+                        map.animateCamera(CameraUpdateFactory.newLatLng(point))
                     }
                     true
                 }
@@ -141,9 +134,54 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
         }
     }
 
+    LaunchedEffect(searchQuery) {
+        val query = searchQuery.trim()
+        if (query.length < 2) {
+            suggestions = emptyList()
+            showSuggestions = false
+            return@LaunchedEffect
+        }
+        delay(300) 
+        try {
+            val geocoder = Geocoder(context)
+            withContext(Dispatchers.IO) {
+                @Suppress("DEPRECATION")
+                val results = geocoder.getFromLocationName(query, 10)
+                withContext(Dispatchers.Main) {
+                    if (results != null) {
+                        suggestions = results
+                        showSuggestions = results.isNotEmpty()
+                    } else {
+                        suggestions = emptyList()
+                        showSuggestions = false
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            withContext(Dispatchers.Main) {
+                suggestions = emptyList()
+                showSuggestions = false
+            }
+        }
+    }
+
+    fun selectLocation(address: Address) {
+        val latLng = LatLng(address.latitude, address.longitude)
+        mapLibreMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(latLng, 16.0))
+        if (!alarmViewModel.isPinDropped) {
+            alarmViewModel.selectedPoint = latLng
+            @Suppress("DEPRECATION")
+            mapLibreMap?.clear()
+            @Suppress("DEPRECATION")
+            mapLibreMap?.addMarker(MarkerOptions().position(latLng).title(address.featureName ?: "Selected Location"))
+        }
+        showSuggestions = false
+        keyboardController?.hide()
+    }
+
     LaunchedEffect(alarmViewModel.isSatellite) {
         mapLibreMap?.let { map ->
-            val styleUrl = if (alarmViewModel.isSatellite) SATELLITE_STYLE else STREET_STYLE
+            val styleUrl = if (alarmViewModel.isSatellite) OUTDOOR_STYLE else STREET_STYLE
             map.setStyle(styleUrl) { style ->
                 if (permissionsGranted) enableLocationComponent(map, style, context)
                 if (alarmViewModel.selectedPoint != null) {
@@ -164,31 +202,36 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
             override fun onResume(owner: LifecycleOwner) { mapView.onResume() }
             override fun onPause(owner: LifecycleOwner) { mapView.onPause() }
             override fun onStop(owner: LifecycleOwner) { mapView.onStop() }
-            override fun onDestroy(owner: LifecycleOwner) { mapView.onDestroy() }
+            override fun onDestroy(owner: LifecycleOwner) { 
+                mapView.onDestroy()
+                mapLibreMap = null 
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose { 
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     if (showNameDialog) {
         AlertDialog(
             onDismissRequest = { showNameDialog = false },
-            containerColor = AppBackground,
-            titleContentColor = AppLightBlue,
-            textContentColor = AppLightBlue,
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text("Set Alarm Name") },
             text = {
                 TextField(
                     value = alarmName,
                     onValueChange = { alarmName = it },
-                    placeholder = { Text("e.g. Home, Market", color = AppLightBlue.copy(alpha = 0.5f)) },
+                    placeholder = { Text("e.g. Home, Market", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = AppDarkBlue,
-                        unfocusedContainerColor = AppDarkBlue,
-                        focusedTextColor = AppLightBlue,
-                        unfocusedTextColor = AppLightBlue,
-                        cursorColor = AppPrimary
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        cursorColor = MaterialTheme.colorScheme.primary
                     )
                 )
             },
@@ -210,15 +253,14 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                             mapLibreMap?.clear()
                             alarmName = ""
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = AppPrimary)
+                    }
                 ) {
-                    Text("Save", color = Color.White)
+                    Text("Save")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showNameDialog = false }) {
-                    Text("Cancel", color = AppLightBlue)
+                    Text("Cancel")
                 }
             }
         )
@@ -230,117 +272,203 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // Top Search Bar
-        Card(
-            modifier = Modifier.fillMaxWidth().padding(16.dp).align(Alignment.TopCenter),
-            elevation = CardDefaults.cardElevation(4.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = AppBackground)
-        ) {
-            TextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search for places...", color = AppLightBlue.copy(alpha = 0.6f)) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = AppLightBlue) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = AppLightBlue,
-                    unfocusedTextColor = AppLightBlue
-                ),
-                singleLine = true
-            )
-        }
-
-        // Satellite and My Location Controls
         Column(
-            modifier = Modifier.padding(top = 80.dp, end = 16.dp).align(Alignment.TopEnd),
-            horizontalAlignment = Alignment.End
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .align(Alignment.TopCenter)
         ) {
             Card(
-                elevation = CardDefaults.cardElevation(2.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = AppBackground)
+                elevation = CardDefaults.cardElevation(8.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { 
+                        searchQuery = it
+                        if (it.isBlank()) {
+                            showSuggestions = false
+                            suggestions = emptyList()
+                        }
+                    },
+                    placeholder = { Text("Search for places...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { 
+                                searchQuery = ""
+                                suggestions = emptyList()
+                                showSuggestions = false
+                            }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { 
+                        if (suggestions.isNotEmpty()) selectLocation(suggestions[0])
+                        keyboardController?.hide()
+                    })
+                )
+            }
+
+            AnimatedVisibility(
+                visible = showSuggestions && suggestions.isNotEmpty(),
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(8.dp)
                 ) {
-                    Icon(Icons.Default.Layers, null, modifier = Modifier.size(18.dp), tint = AppLightBlue)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Satellite", fontSize = 12.sp, color = AppLightBlue)
-                    Switch(
-                        checked = alarmViewModel.isSatellite,
-                        onCheckedChange = { alarmViewModel.isSatellite = it },
-                        modifier = Modifier.scale(0.7f),
-                        colors = SwitchDefaults.colors(
-                            checkedTrackColor = AppPrimary,
-                            uncheckedBorderColor = AppLightBlue
-                        )
-                    )
+                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                        items(suggestions) { address ->
+                            val mainText = address.featureName ?: address.thoroughfare ?: address.locality ?: ""
+                            val subText = address.getAddressLine(0) ?: ""
+                            
+                            ListItem(
+                                headlineContent = { Text(mainText, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) },
+                                supportingContent = { Text(subText, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), fontSize = 12.sp) },
+                                leadingContent = { Icon(Icons.Default.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                                modifier = Modifier.clickable { selectLocation(address) },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                        }
+                    }
                 }
             }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
+        }
+
+        Column(
+            modifier = Modifier
+                .padding(bottom = if (alarmViewModel.selectedPoint != null) 220.dp else 16.dp, end = 16.dp)
+                .align(Alignment.BottomEnd),
+            horizontalAlignment = Alignment.End
+        ) {
+            FloatingActionButton(
+                onClick = {
+                    mapLibreMap?.animateCamera(CameraUpdateFactory.bearingTo(0.0))
+                },
+                modifier = Modifier.size(56.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = CircleShape
+            ) {
+                Icon(Icons.Default.Explore, contentDescription = "Reset North")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             FloatingActionButton(
                 onClick = {
                     mapLibreMap?.locationComponent?.let {
                         if (it.isLocationComponentActivated) {
                             it.cameraMode = CameraMode.TRACKING
+                            it.zoomWhileTracking(15.0)
+                        } else {
+                           permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                         }
                     }
                 },
-                modifier = Modifier.size(40.dp),
-                containerColor = AppBackground,
-                contentColor = AppLightBlue
+                modifier = Modifier.size(56.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = CircleShape
             ) {
-                Icon(Icons.Default.MyLocation, contentDescription = "My Location", modifier = Modifier.size(20.dp))
+                Icon(Icons.Default.MyLocation, contentDescription = "My Location")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                elevation = CardDefaults.cardElevation(4.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).clickable {
+                        alarmViewModel.isSatellite = !alarmViewModel.isSatellite
+                    },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (alarmViewModel.isSatellite) Icons.Default.Layers else Icons.Default.LayersClear,
+                        null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (alarmViewModel.isSatellite) "3D Map" else "2D Map", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Switch(
+                        checked = alarmViewModel.isSatellite,
+                        onCheckedChange = { alarmViewModel.isSatellite = it },
+                        modifier = Modifier.scale(0.7f),
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            uncheckedBorderColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                }
             }
         }
 
-        // Location overlay
         if (alarmViewModel.selectedPoint != null && !alarmViewModel.isPinDropped) {
             Column(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp).padding(horizontal = 20.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = AppBackground),
-                    elevation = CardDefaults.cardElevation(8.dp)
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(8.dp),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Location Info", fontWeight = FontWeight.Bold, color = AppLightBlue)
+                        Text("Selected Location", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         val latStr = String.format(Locale.US, "%.5f", alarmViewModel.selectedPoint!!.latitude)
                         val lonStr = String.format(Locale.US, "%.5f", alarmViewModel.selectedPoint!!.longitude)
-                        Text("Lat: $latStr, Lon: $lonStr", fontSize = 12.sp, color = AppLightBlue.copy(alpha = 0.8f))
+                        Text("Lat: $latStr, Lon: $lonStr", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Button(
+                            onClick = {
+                                alarmViewModel.isPinDropped = true
+                                mapLibreMap?.let { updateMapVisuals(it, alarmViewModel.selectedPoint!!, alarmViewModel.radiusMeters) }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("DROP PIN HERE", fontWeight = FontWeight.Bold)
+                        }
                     }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        alarmViewModel.isPinDropped = true
-                        mapLibreMap?.let { updateMapVisuals(it, alarmViewModel.selectedPoint!!, alarmViewModel.radiusMeters) }
-                    },
-                    modifier = Modifier.fillMaxWidth(0.7f),
-                    colors = ButtonDefaults.buttonColors(containerColor = AppPrimary)
-                ) {
-                    Text("DROP PIN", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
 
-        // Detail Slider and Set Alarm
         if (alarmViewModel.isPinDropped && alarmViewModel.selectedPoint != null) {
             Card(
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
                 elevation = CardDefaults.cardElevation(12.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = AppBackground)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Row(
@@ -349,8 +477,8 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Alarm Area", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = AppLightBlue)
-                            Text("Adjust the radius below", color = AppLightBlue.copy(alpha = 0.6f), fontSize = 14.sp)
+                            Text("Alarm Area", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Adjust the radius below", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 14.sp)
                         }
                         IconButton(onClick = { 
                             alarmViewModel.isPinDropped = false
@@ -358,35 +486,29 @@ fun MapScreen(alarmViewModel: AlarmViewModel = viewModel()) {
                             @Suppress("DEPRECATION")
                             mapLibreMap?.clear()
                         }) {
-                            Icon(Icons.Default.Close, null, tint = AppLightBlue)
+                            Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurface)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    Text("Radius: ${alarmViewModel.radiusMeters.toInt()} m", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppLightBlue)
+                    Text("Radius: ${alarmViewModel.radiusMeters.toInt()} m", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                     Slider(
                         value = alarmViewModel.radiusMeters,
                         onValueChange = { 
                             alarmViewModel.radiusMeters = it
                             mapLibreMap?.let { map -> updateMapVisuals(map, alarmViewModel.selectedPoint!!, alarmViewModel.radiusMeters) }
                         },
-                        valueRange = 250f..5000f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = AppPrimary,
-                            activeTrackColor = AppPrimary,
-                            inactiveTrackColor = AppDarkBlue
-                        )
+                        valueRange = 100f..5000f
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Button(
                         onClick = { showNameDialog = true },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = AppPrimary)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("SET ALARM", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("SET ALARM", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -403,7 +525,7 @@ private fun updateMapVisuals(map: MapLibreMap, center: LatLng, radius: Float) {
     val points = mutableListOf<LatLng>()
     val radiusInDegrees = radius / 111320f 
     
-    for (i in 0 until 360 step 5) { // Optimized steps
+    for (i in 0 until 360 step 5) {
         val rad = Math.toRadians(i.toDouble())
         val lat = center.latitude + (radiusInDegrees * cos(rad))
         val lng = center.longitude + (radiusInDegrees * sin(rad) / cos(Math.toRadians(center.latitude)))

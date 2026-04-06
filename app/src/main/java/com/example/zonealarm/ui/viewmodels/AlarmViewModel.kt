@@ -3,6 +3,7 @@ package com.example.zonealarm.ui.viewmodels
 import android.annotation.SuppressLint
 import android.app.Application
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -28,13 +29,37 @@ import org.maplibre.android.geometry.LatLng
 class AlarmViewModel(application: Application) : AndroidViewModel(application) {
     private val alarmDao = AlarmDatabase.getDatabase(application).alarmDao()
     private val geofencingClient = LocationServices.getGeofencingClient(application)
+    private val prefs = application.getSharedPreferences("ZoneAlarmPrefs", Context.MODE_PRIVATE)
 
     // Map State Persistence
-    var cameraPosition by mutableStateOf<CameraPosition?>(null)
+    private var _cameraPosition = mutableStateOf<CameraPosition?>(loadCameraPosition())
+    var cameraPosition: CameraPosition?
+        get() = _cameraPosition.value
+        set(value) {
+            _cameraPosition.value = value
+            saveCameraPosition(value)
+        }
+        
     var selectedPoint by mutableStateOf<LatLng?>(null)
     var isPinDropped by mutableStateOf(false)
     var radiusMeters by mutableFloatStateOf(500f)
-    var isSatellite by mutableStateOf(false)
+
+    private var _isSatellite = mutableStateOf(prefs.getBoolean("is_satellite", false))
+    var isSatellite: Boolean
+        get() = _isSatellite.value
+        set(value) {
+            _isSatellite.value = value
+            prefs.edit().putBoolean("is_satellite", value).apply()
+        }
+
+    // Theme State
+    var isDarkMode by mutableStateOf(prefs.getBoolean("dark_mode", true))
+        private set
+
+    fun toggleTheme(isDark: Boolean) {
+        isDarkMode = isDark
+        prefs.edit().putBoolean("dark_mode", isDark).apply()
+    }
 
     val alarms: StateFlow<List<AlarmEntity>> = alarmDao.getAllAlarms()
         .stateIn(
@@ -49,6 +74,28 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    private fun saveCameraPosition(pos: CameraPosition?) {
+        pos?.let {
+            it.target?.let { target ->
+                prefs.edit()
+                    .putFloat("cam_lat", target.latitude.toFloat())
+                    .putFloat("cam_lon", target.longitude.toFloat())
+                    .putFloat("cam_zoom", it.zoom.toFloat())
+                    .putFloat("cam_bearing", it.bearing.toFloat())
+                    .apply()
+            }
+        }
+    }
+
+    private fun loadCameraPosition(): CameraPosition? {
+        if (!prefs.contains("cam_lat")) return null
+        return CameraPosition.Builder()
+            .target(LatLng(prefs.getFloat("cam_lat", 0f).toDouble(), prefs.getFloat("cam_lon", 0f).toDouble()))
+            .zoom(prefs.getFloat("cam_zoom", 14f).toDouble())
+            .bearing(prefs.getFloat("cam_bearing", 0f).toDouble())
+            .build()
+    }
 
     fun addAlarm(name: String, latitude: Double, longitude: Double, radius: Float) {
         viewModelScope.launch {
@@ -70,6 +117,7 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
             .setCircularRegion(alarm.latitude, alarm.longitude, alarm.radius)
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
             .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
+            .setNotificationResponsiveness(0) // Instant triggering
             .build()
 
         val request = GeofencingRequest.Builder()
@@ -99,13 +147,6 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun disableAlarm(id: Int) {
-        viewModelScope.launch {
-            alarmDao.setAlarmEnabled(id, false)
-            geofencingClient.removeGeofences(listOf(id.toString()))
-        }
-    }
-
     fun deleteAlarm(alarm: AlarmEntity) {
         viewModelScope.launch {
             alarmDao.deleteAlarm(alarm)
@@ -116,6 +157,14 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
     fun clearHistory() {
         viewModelScope.launch {
             alarmDao.clearHistory()
+        }
+    }
+
+    fun deleteHistoryItems(ids: Set<Int>) {
+        viewModelScope.launch {
+            ids.forEach { id ->
+                alarmDao.deleteHistoryById(id)
+            }
         }
     }
 }

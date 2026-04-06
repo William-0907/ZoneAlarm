@@ -1,6 +1,8 @@
 package com.example.zonealarm
 
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -20,7 +22,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.zonealarm.data.AlarmEntity
 import com.example.zonealarm.ui.screens.AlarmEditScreen
@@ -48,12 +55,11 @@ sealed class NavItem(val icon: ImageVector, val label: String) {
     object Settings : NavItem(Icons.Default.Settings, "Settings")
 }
 
-// Custom Colors
+// Custom Colors - Dark Mode defaults
 val AppPrimary = Color(0xFF5760DE)
 val AppDarkBlue = Color(0xFF2C2D38)
 val AppBackground = Color(0xFF404154)
-val AppSurface = Color(0xFFABAED9)
-val AppLightBlue = Color(0xFFD3D5F0)
+val AppLightBlue = Color(0xFFE6E8FF)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,35 +67,73 @@ class MainActivity : ComponentActivity() {
         MapLibre.getInstance(this)
         enableEdgeToEdge()
         setContent {
-            ZoneAlarmTheme {
-                ZoneAlarmMainScreen()
+            val viewModel: AlarmViewModel = viewModel()
+            ZoneAlarmTheme(darkTheme = viewModel.isDarkMode) {
+                PermissionChecker()
+                ZoneAlarmMainScreen(viewModel)
             }
+        }
+    }
+
+    @Composable
+    private fun PermissionChecker() {
+        var showOverlayDialog by remember { mutableStateOf(false) }
+
+        LaunchedEffect(Unit) {
+            if (!Settings.canDrawOverlays(this@MainActivity)) {
+                showOverlayDialog = true
+            }
+        }
+
+        if (showOverlayDialog) {
+            AlertDialog(
+                onDismissRequest = { showOverlayDialog = false },
+                title = { Text("Permission Required") },
+                text = { Text("ZoneAlarm needs 'Display over other apps' permission to show the alarm screen when you enter a zone, even if the app is closed.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showOverlayDialog = false
+                        val intent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            "package:$packageName".toUri()
+                        )
+                        startActivity(intent)
+                    }) {
+                        Text("Grant Permission")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showOverlayDialog = false }) {
+                        Text("Later")
+                    }
+                }
+            )
         }
     }
 }
 
 @Composable
-fun ZoneAlarmMainScreen() {
-    val viewModel: AlarmViewModel = viewModel()
+fun ZoneAlarmMainScreen(viewModel: AlarmViewModel) {
     val tabs = listOf(NavItem.Alarms, NavItem.Map, NavItem.History, NavItem.Settings)
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val coroutineScope = rememberCoroutineScope()
     
     var editingAlarm by remember { mutableStateOf<AlarmEntity?>(null) }
 
-    if (editingAlarm != null) {
+    val currentAlarm = editingAlarm
+    if (currentAlarm != null) {
         BackHandler { editingAlarm = null }
         AlarmEditScreen(
-            alarm = editingAlarm!!,
+            alarm = currentAlarm,
             onBack = { editingAlarm = null },
             viewModel = viewModel
         )
     } else {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = AppBackground,
+            containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                NavigationBar(containerColor = AppBackground) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
                     tabs.forEachIndexed { index, item ->
                         NavigationBarItem(
                             selected = pagerState.currentPage == index,
@@ -107,11 +151,11 @@ fun ZoneAlarmMainScreen() {
                             label = { Text(item.label) },
                             alwaysShowLabel = true,
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = AppLightBlue,
-                                unselectedIconColor = AppSurface.copy(alpha = 0.7f),
-                                indicatorColor = AppDarkBlue,
-                                selectedTextColor = AppLightBlue,
-                                unselectedTextColor = AppSurface.copy(alpha = 0.7f)
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                unselectedIconColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                                indicatorColor = MaterialTheme.colorScheme.surface,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                unselectedTextColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                             )
                         )
                     }
@@ -122,7 +166,7 @@ fun ZoneAlarmMainScreen() {
                 state = pagerState,
                 modifier = Modifier.padding(innerPadding),
                 userScrollEnabled = pagerState.currentPage != 1,
-                beyondViewportPageCount = tabs.size
+                beyondViewportPageCount = tabs.size // FIX: Keep all screens in memory to eliminate lag when switching
             ) { page ->
                 when (page) {
                     0 -> AlarmListScreen(
@@ -132,7 +176,7 @@ fun ZoneAlarmMainScreen() {
                     )
                     1 -> MapScreen(alarmViewModel = viewModel)
                     2 -> AlarmHistoryScreen(viewModel = viewModel)
-                    3 -> SettingsScreen()
+                    3 -> SettingsScreen(viewModel = viewModel)
                 }
             }
         }
