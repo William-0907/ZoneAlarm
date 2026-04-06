@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
@@ -92,15 +93,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     private fun sendNotification(context: Context, alarmId: Int, alarmName: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "zone_alarm_channel_v4" // New channel to ensure settings apply
+        val channelId = "zone_alarm_channel_v6" // Incremented to v6 to make notification silent
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "Zone Alarms", NotificationManager.IMPORTANCE_HIGH).apply {
-                val audioAttributes = AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .build()
-                setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), audioAttributes)
+                // Set sound to null for the channel to avoid double ringtone
+                setSound(null, null)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 250, 500)
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
@@ -133,11 +131,10 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             .setFullScreenIntent(fullScreenIntent, true)
             .setContentIntent(fullScreenIntent)
             .setAutoCancel(true)
-            .setOngoing(false) // Changed to false so user can swipe it away
+            .setOngoing(false)
             .setVibrate(longArrayOf(0, 500, 250, 500))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
-            .setFullScreenIntent(fullScreenIntent, true) // Required for high-priority background launch
+            .setSound(null) // Silent notification because AlarmActivity handles the ringtone
             .build()
 
         notificationManager.notify(alarmId, notification)

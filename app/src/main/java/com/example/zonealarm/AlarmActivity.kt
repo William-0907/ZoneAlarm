@@ -1,6 +1,7 @@
 package com.example.zonealarm
 
 import android.app.KeyguardManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
@@ -103,7 +104,12 @@ class AlarmActivity : ComponentActivity() {
 
     private fun stopAlarm() {
         ringtone?.stop()
+        
+        // Cancel the notification
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (alarmId != -1) {
+            notificationManager.cancel(alarmId)
+            
             val db = AlarmDatabase.getDatabase(this)
             val geofencingClient = LocationServices.getGeofencingClient(this)
             
@@ -113,7 +119,11 @@ class AlarmActivity : ComponentActivity() {
                 // Remove from active geofences
                 geofencingClient.removeGeofences(listOf(alarmId.toString()))
             }
+        } else {
+            // If for some reason ID is missing, cancel all to be safe or use a known constant if applicable
+            notificationManager.cancelAll()
         }
+
         finish()
     }
 
