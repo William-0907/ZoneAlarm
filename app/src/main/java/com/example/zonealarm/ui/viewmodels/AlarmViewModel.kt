@@ -13,9 +13,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.zonealarm.GeofenceBroadcastReceiver
-import com.example.zonealarm.data.AlarmDatabase
 import com.example.zonealarm.data.AlarmEntity
 import com.example.zonealarm.data.AlarmHistoryEntity
+import com.example.zonealarm.data.AlarmRepository
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
@@ -26,8 +26,10 @@ import kotlinx.coroutines.launch
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 
-class AlarmViewModel(application: Application) : AndroidViewModel(application) {
-    private val alarmDao = AlarmDatabase.getDatabase(application).alarmDao()
+class AlarmViewModel(
+    private val alarmRepository: AlarmRepository,
+    application: Application
+) : AndroidViewModel(application) {
     private val geofencingClient = LocationServices.getGeofencingClient(application)
     private val prefs = application.getSharedPreferences("ZoneAlarmPrefs", Context.MODE_PRIVATE)
 
@@ -61,14 +63,14 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("dark_mode", isDark).apply()
     }
 
-    val alarms: StateFlow<List<AlarmEntity>> = alarmDao.getAllAlarms()
+    val alarms: StateFlow<List<AlarmEntity>> = alarmRepository.getAllAlarmsStream()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-    val history: StateFlow<List<AlarmHistoryEntity>> = alarmDao.getAllHistory()
+    val history: StateFlow<List<AlarmHistoryEntity>> = alarmRepository.getAllHistoryStream()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -105,7 +107,7 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
                 longitude = longitude,
                 radius = radius
             )
-            val id = alarmDao.insertAlarm(alarm).toInt()
+            val id = alarmRepository.insertAlarm(alarm).toInt()
             setupGeofence(alarm.copy(id = id))
         }
     }
@@ -141,7 +143,7 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAlarm(alarm: AlarmEntity) {
         viewModelScope.launch {
-            alarmDao.updateAlarm(alarm)
+            alarmRepository.updateAlarm(alarm)
             if (alarm.isEnabled) setupGeofence(alarm)
             else geofencingClient.removeGeofences(listOf(alarm.id.toString()))
         }
@@ -149,21 +151,21 @@ class AlarmViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteAlarm(alarm: AlarmEntity) {
         viewModelScope.launch {
-            alarmDao.deleteAlarm(alarm)
+            alarmRepository.deleteAlarm(alarm)
             geofencingClient.removeGeofences(listOf(alarm.id.toString()))
         }
     }
 
     fun clearHistory() {
         viewModelScope.launch {
-            alarmDao.clearHistory()
+            alarmRepository.clearHistory()
         }
     }
 
     fun deleteHistoryItems(ids: Set<Int>) {
         viewModelScope.launch {
             ids.forEach { id ->
-                alarmDao.deleteHistoryById(id)
+                alarmRepository.deleteHistoryById(id)
             }
         }
     }

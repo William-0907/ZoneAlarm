@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.zonealarm.data.AlarmEntity
+import com.example.zonealarm.ui.AppViewModelProvider
 import com.example.zonealarm.ui.screens.AlarmEditScreen
 import com.example.zonealarm.ui.screens.AlarmHistoryScreen
 import com.example.zonealarm.ui.screens.AlarmListScreen
@@ -65,7 +66,7 @@ class MainActivity : ComponentActivity() {
         MapLibre.getInstance(this)
         enableEdgeToEdge()
         setContent {
-            val viewModel: AlarmViewModel = viewModel()
+            val viewModel: AlarmViewModel = viewModel(factory = AppViewModelProvider.Factory)
             ZoneAlarmTheme(darkTheme = viewModel.isDarkMode) {
                 PermissionChecker()
                 ZoneAlarmMainScreen(viewModel)

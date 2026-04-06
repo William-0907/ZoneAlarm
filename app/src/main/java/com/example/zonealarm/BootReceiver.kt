@@ -5,7 +5,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.example.zonealarm.data.AlarmDatabase
 import com.example.zonealarm.data.AlarmEntity
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
@@ -22,12 +21,11 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun reRegisterGeofences(context: Context) {
-        val db = AlarmDatabase.getDatabase(context)
-        val dao = db.alarmDao()
+        val repository = (context.applicationContext as ZoneAlarmApplication).container.alarmRepository
         val geofencingClient = LocationServices.getGeofencingClient(context)
 
         CoroutineScope(Dispatchers.IO).launch {
-            val alarms = dao.getAllAlarmsDirect() // Need to add this to DAO
+            val alarms = repository.getAllAlarmsDirect()
             alarms.filter { it.isEnabled }.forEach { alarm ->
                 setupGeofence(context, geofencingClient, alarm)
             }
