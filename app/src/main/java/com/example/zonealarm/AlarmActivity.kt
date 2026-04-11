@@ -3,7 +3,6 @@ package com.example.zonealarm
 import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
@@ -36,16 +35,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.zonealarm.data.AlarmDatabase
+import com.example.zonealarm.data.AlarmDao
 import com.example.zonealarm.ui.theme.ZoneAlarmTheme
 import com.google.android.gms.location.LocationServices
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class AlarmActivity : ComponentActivity() {
     private var ringtone: Ringtone? = null
     private var alarmId: Int = -1
+
+    @Inject
+    lateinit var alarmDao: AlarmDao
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,12 +115,11 @@ class AlarmActivity : ComponentActivity() {
         if (alarmId != -1) {
             notificationManager.cancel(alarmId)
             
-            val db = AlarmDatabase.getDatabase(this)
             val geofencingClient = LocationServices.getGeofencingClient(this)
             
             CoroutineScope(Dispatchers.IO).launch {
-                // Turn off switch in DB
-                db.alarmDao().setAlarmEnabled(alarmId, false)
+                // Turn off switch in DB using injected DAO
+                alarmDao.setAlarmEnabled(alarmId, false)
                 // Remove from active geofences
                 geofencingClient.removeGeofences(listOf(alarmId.toString()))
             }

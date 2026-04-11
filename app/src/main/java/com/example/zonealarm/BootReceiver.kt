@@ -6,14 +6,22 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.example.zonealarm.data.AlarmEntity
+import com.example.zonealarm.data.AlarmRepository
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
+
+    @Inject
+    lateinit var alarmRepository: AlarmRepository
+
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             reRegisterGeofences(context)
@@ -21,11 +29,10 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun reRegisterGeofences(context: Context) {
-        val repository = (context.applicationContext as ZoneAlarmApplication).container.alarmRepository
         val geofencingClient = LocationServices.getGeofencingClient(context)
 
         CoroutineScope(Dispatchers.IO).launch {
-            val alarms = repository.getAllAlarmsDirect()
+            val alarms = alarmRepository.getAllAlarmsDirect()
             alarms.filter { it.isEnabled }.forEach { alarm ->
                 setupGeofence(context, geofencingClient, alarm)
             }

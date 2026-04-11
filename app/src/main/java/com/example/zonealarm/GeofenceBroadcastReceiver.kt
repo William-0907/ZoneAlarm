@@ -11,14 +11,22 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.zonealarm.data.AlarmHistoryEntity
+import com.example.zonealarm.data.AlarmRepository
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofenceStatusCodes
 import com.google.android.gms.location.GeofencingEvent
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
+
+    @Inject
+    lateinit var alarmRepository: AlarmRepository
+
     override fun onReceive(context: Context, intent: Intent) {
         val pendingResult = goAsync()
         
@@ -68,14 +76,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
     }
 
     private suspend fun processGeofences(context: Context, triggeringGeofences: List<Geofence>) {
-        val repository = (context.applicationContext as ZoneAlarmApplication).container.alarmRepository
-
         triggeringGeofences.forEach { geofence ->
             val alarmId = geofence.requestId.toIntOrNull() ?: return@forEach
-            val alarm = repository.getAlarmStream(alarmId)
+            val alarm = alarmRepository.getAlarmStream(alarmId)
             val alarmName = alarm?.name ?: "Unknown Zone"
             
-            repository.insertHistory(
+            alarmRepository.insertHistory(
                 AlarmHistoryEntity(
                     alarmName = alarmName,
                     transitionType = "Entered"
