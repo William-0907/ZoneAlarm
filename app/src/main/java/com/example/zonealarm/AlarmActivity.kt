@@ -9,6 +9,9 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -48,6 +51,7 @@ import javax.inject.Inject
 class AlarmActivity : ComponentActivity() {
     private var ringtone: Ringtone? = null
     private var alarmId: Int = -1
+    private var vibrator: Vibrator? = null
 
     @Inject
     lateinit var alarmDao: AlarmDao
@@ -94,6 +98,8 @@ class AlarmActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
+        startVibration()
+
         enableEdgeToEdge()
         setContent {
             ZoneAlarmTheme {
@@ -107,8 +113,27 @@ class AlarmActivity : ComponentActivity() {
         }
     }
 
+    private fun startVibration() {
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+
+        val pattern = longArrayOf(0, 500, 500) // Start immediately, vibrate 500ms, pause 500ms
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 means repeat from index 0
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator?.vibrate(pattern, 0)
+        }
+    }
+
     private fun stopAlarm() {
         ringtone?.stop()
+        vibrator?.cancel()
         
         // Cancel the notification
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -134,6 +159,7 @@ class AlarmActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         ringtone?.stop()
+        vibrator?.cancel()
     }
 }
 
