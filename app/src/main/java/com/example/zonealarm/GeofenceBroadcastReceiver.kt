@@ -6,23 +6,27 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.media.AudioAttributes
-import android.media.RingtoneManager
-import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.example.zonealarm.data.AlarmDatabase
 import com.example.zonealarm.data.AlarmHistoryEntity
+import com.example.zonealarm.data.AlarmRepository
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofenceStatusCodes
 import com.google.android.gms.location.GeofencingEvent
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
+
+    @Inject
+    lateinit var alarmRepository: AlarmRepository
+
     override fun onReceive(context: Context, intent: Intent) {
         val pendingResult = goAsync()
         
@@ -72,15 +76,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
     }
 
     private suspend fun processGeofences(context: Context, triggeringGeofences: List<Geofence>) {
-        val db = AlarmDatabase.getDatabase(context)
-        val dao = db.alarmDao()
-
         triggeringGeofences.forEach { geofence ->
             val alarmId = geofence.requestId.toIntOrNull() ?: return@forEach
-            val alarm = dao.getAlarmById(alarmId)
+            val alarm = alarmRepository.getAlarmStream(alarmId)
             val alarmName = alarm?.name ?: "Unknown Zone"
             
-            dao.insertHistory(
+            alarmRepository.insertHistory(
                 AlarmHistoryEntity(
                     alarmName = alarmName,
                     transitionType = "Entered"
@@ -93,11 +94,10 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     private fun sendNotification(context: Context, alarmId: Int, alarmName: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "zone_alarm_channel_v6" // Incremented to v6 to make notification silent
+        val channelId = "zone_alarm_channel_v6" 
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "Zone Alarms", NotificationManager.IMPORTANCE_HIGH).apply {
-                // Set sound to null for the channel to avoid double ringtone
                 setSound(null, null)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 250, 500)
@@ -134,12 +134,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             .setOngoing(false)
             .setVibrate(longArrayOf(0, 500, 250, 500))
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setSound(null) // Silent notification because AlarmActivity handles the ringtone
+            .setSound(null) 
             .build()
 
         notificationManager.notify(alarmId, notification)
 
-        // Force launch activity if app is killed or backgrounded
         try {
             context.startActivity(alarmIntent)
         } catch (e: Exception) {

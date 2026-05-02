@@ -3,13 +3,15 @@ package com.example.zonealarm
 import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -36,16 +38,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.zonealarm.data.AlarmDatabase
+import com.example.zonealarm.data.AlarmDao
 import com.example.zonealarm.ui.theme.ZoneAlarmTheme
 import com.google.android.gms.location.LocationServices
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class AlarmActivity : ComponentActivity() {
     private var ringtone: Ringtone? = null
     private var alarmId: Int = -1
+    private var vibrator: Vibrator? = null
+
+    @Inject
+    lateinit var alarmDao: AlarmDao
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -89,6 +98,8 @@ class AlarmActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
+        startVibration()
+
         enableEdgeToEdge()
         setContent {
             ZoneAlarmTheme {
@@ -102,20 +113,38 @@ class AlarmActivity : ComponentActivity() {
         }
     }
 
+    private fun startVibration() {
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+
+        val pattern = longArrayOf(0, 500, 500) // Start immediately, vibrate 500ms, pause 500ms
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0)) // 0 means repeat from index 0
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator?.vibrate(pattern, 0)
+        }
+    }
+
     private fun stopAlarm() {
         ringtone?.stop()
+        vibrator?.cancel()
         
         // Cancel the notification
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (alarmId != -1) {
             notificationManager.cancel(alarmId)
             
-            val db = AlarmDatabase.getDatabase(this)
             val geofencingClient = LocationServices.getGeofencingClient(this)
             
             CoroutineScope(Dispatchers.IO).launch {
-                // Turn off switch in DB
-                db.alarmDao().setAlarmEnabled(alarmId, false)
+                // Turn off switch in DB using injected DAO
+                alarmDao.setAlarmEnabled(alarmId, false)
                 // Remove from active geofences
                 geofencingClient.removeGeofences(listOf(alarmId.toString()))
             }
@@ -130,6 +159,7 @@ class AlarmActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         ringtone?.stop()
+        vibrator?.cancel()
     }
 }
 

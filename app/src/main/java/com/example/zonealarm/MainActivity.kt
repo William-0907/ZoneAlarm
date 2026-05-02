@@ -34,7 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.net.toUri
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.zonealarm.data.AlarmEntity
 import com.example.zonealarm.ui.screens.AlarmEditScreen
 import com.example.zonealarm.ui.screens.AlarmHistoryScreen
@@ -43,6 +43,7 @@ import com.example.zonealarm.ui.screens.MapScreen
 import com.example.zonealarm.ui.screens.SettingsScreen
 import com.example.zonealarm.ui.theme.ZoneAlarmTheme
 import com.example.zonealarm.ui.viewmodels.AlarmViewModel
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import org.maplibre.android.MapLibre
 
@@ -59,13 +60,14 @@ val AppDarkBlue = Color(0xFF2C2D38)
 val AppBackground = Color(0xFF404154)
 val AppLightBlue = Color(0xFFE6E8FF)
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
         enableEdgeToEdge()
         setContent {
-            val viewModel: AlarmViewModel = viewModel()
+            val viewModel: AlarmViewModel = hiltViewModel()
             ZoneAlarmTheme(darkTheme = viewModel.isDarkMode) {
                 PermissionChecker()
                 ZoneAlarmMainScreen(viewModel)
